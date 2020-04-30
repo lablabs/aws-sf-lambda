@@ -16,7 +16,7 @@ A lambda function which is supposed to be used as a lifecycle hook in AWS ASGs. 
 
 ## Prerequisites
 
-- AWS ASGs configured with lifecycle hooks. See [aws-sf-terraform](https://github.com/adys/aws-sf-terraform).
+- AWS ASGs configured with lifecycle hooks. See [aws-sf-terraform](https://github.com/lablabs/terraform-aws-sf).
 
 ## Contributing and reporting issues
 
