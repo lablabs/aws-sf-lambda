@@ -1,9 +1,11 @@
+import os
+import random
+from datetime import datetime
+
+# boto3 and botocore are provided by AWS Lambda runtime
+# https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html
 import boto3
 import botocore
-import random
-import json
-import os
-from datetime import datetime
 
 ec2_client = boto3.client('ec2')
 asg_client = boto3.client('autoscaling')
