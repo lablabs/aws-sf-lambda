@@ -41,7 +41,7 @@ def handle(event, context):  # noqa
 
 def get_ebs_volume_id(eni_id):
     """
-    Get the ebs volumes that is bound to the right ENI.
+    Get the EBS volume ID that is bound to the right ENI.
     """
     ebs_volume_id = None
     try:
@@ -64,15 +64,15 @@ def get_ebs_volume_id(eni_id):
     if not ebs_volume_id or len(ebs_volume_id) == 0:
         raise ResourceNotFound(
             "EBS",
-            "No EBS for ENI ID '{}' has been found".format(eni_id)
+            "No EBS volume for ENI ID '{}' has been found".format(eni_id)
         )
 
     return ebs_volume_id
 
 
-def get_free_enis(internal_subnet):
+def get_free_enis(subnet_id):
     """
-    Get all free NetworkInterfaces in the internal subnet with the tag.
+    Get all free NetworkInterfaces in the subnet with the tag.
     """
     free_enis = None
     try:
@@ -83,7 +83,7 @@ def get_free_enis(internal_subnet):
             },
             {
                 "Name": "subnet-id",
-                "Values": [internal_subnet]
+                "Values": [subnet_id]
             },
             {
                 "Name": "status",
@@ -91,15 +91,15 @@ def get_free_enis(internal_subnet):
             }
         ])
         free_enis = result['NetworkInterfaces']
-        log("free_enis: {}".format([eni["NetworkInterfaceId"] for eni in free_enis]))
+        log("Free ENI IDs: {}".format([eni["NetworkInterfaceId"] for eni in free_enis]))
 
     except ClientError as e:
-        log("Error describing the instance {}: {}".format(internal_subnet, e.response['Error']))
+        log("Error describing the instance {}: {}".format(subnet_id, e.response['Error']))
 
     if not free_enis or len(free_enis) == 0:
         raise ResourceNotFound(
             "ENI",
-            "No ENI for subnet ID '{}' has been found".format(internal_subnet)
+            "No ENI for subnet ID '{}' has been found".format(subnet_id)
         )
 
     return free_enis
@@ -112,7 +112,7 @@ def get_random_eni_id(enis):
 
 def get_subnet_id(instance_id):
     """
-    Get id of subnet where the instance is running.
+    Get ID of subnet where the instance is running.
     """
     vpc_subnet_id = None
     try:
@@ -133,11 +133,11 @@ def get_subnet_id(instance_id):
 
 def attach_eni(eni_id, instance_id):
     """
-    Attach eni to instance.
+    Attach ENI to the instance.
     """
     attachment = None
 
-    log("Attaching '{}' eni to '{}' instance".format(eni_id, instance_id))
+    log("Attaching '{}' ENI to '{}' instance".format(eni_id, instance_id))
     if eni_id and instance_id:
         try:
             attach_interface = ec2_client.attach_network_interface(
@@ -157,10 +157,10 @@ def attach_eni(eni_id, instance_id):
 
 def attach_ebs(ebs_id, instance_id):
     """
-    Attach eni to instance.
+    Attach EBS volume to the instance.
     """
     attachment_state = None
-    log("Attaching '{}' ebs to '{}' instance".format(ebs_id, instance_id))
+    log("Attaching '{}' EBS volume to '{}' instance".format(ebs_id, instance_id))
     if ebs_id and instance_id:
         try:
             attachment = ec2_client.attach_volume(
