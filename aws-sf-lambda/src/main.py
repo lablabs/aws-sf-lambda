@@ -23,30 +23,20 @@ def handle(event, context):  # noqa
         lifecycle_hook_name = event['detail']['LifecycleHookName']
         auto_scaling_group_name = event['detail']['AutoScalingGroupName']
 
-        subnet_id = get_subnet_id(instance_id)
-        log("subnet_id: {} ".format(subnet_id))
+        try:
+            subnet_id = get_subnet_id(instance_id)
+            free_enis = get_free_enis(subnet_id)
+            eni_id = get_random_eni_id(free_enis)
+            ebs_volume = get_ebs_volume(eni_id)
 
-        # eni
-        free_enis = get_free_enis(subnet_id)
-        if len(free_enis) == 0:
-            log("No free ENIs found")
-            complete_lifecycle_action_failure(lifecycle_hook_name, auto_scaling_group_name, instance_id)
-        log("free_enis: {} ".format([eni["NetworkInterfaceId"] for eni in free_enis]))
-        eni_to_attach = random.choice(free_enis)
-        eni_id = eni_to_attach["NetworkInterfaceId"]
-        eni_attachment = attach_eni(eni_id, instance_id)
-        if not eni_attachment:
-            complete_lifecycle_action_failure(lifecycle_hook_name, auto_scaling_group_name, instance_id)
+            attach_eni(eni_id, instance_id)
+            attach_ebs(ebs_volume["VolumeId"], instance_id)
 
-        # ebs
-        ebs_volume = get_ebs_volume(eni_id)
-        if len(ebs_volume) == 0:
-            log("TODO: FAIL...Volume not found")
-        log("Free EBS volume: {}".format(ebs_volume["VolumeId"]))
-        ebs_attachment = attach_ebs(ebs_volume["VolumeId"], instance_id)
-        if not ebs_attachment:
+            complete_lifecycle_action_success(lifecycle_hook_name, auto_scaling_group_name, instance_id)
+
+        except (ResourceNotFound, ResourceAttachError) as e:
+            log(e.message)
             complete_lifecycle_action_failure(lifecycle_hook_name, auto_scaling_group_name, instance_id)
-        complete_lifecycle_action_success(lifecycle_hook_name, auto_scaling_group_name, instance_id)
 
 
 def get_ebs_volume(eni_id):
@@ -66,9 +56,16 @@ def get_ebs_volume(eni_id):
             }
         ])
         ebs_volume = result['Volumes'][0]
+        log("Free EBS volume: {}".format(ebs_volume["VolumeId"]))
 
     except ClientError as e:
         log("Error describing the instance {}: {}".format(eni_id, e.response['Error']))
+
+    if not ebs_volume or len(ebs_volume) == 0:
+        raise ResourceNotFound(
+            "EBS",
+            "No EBS for ENI ID '{}' has been found".format(eni_id)
+        )
 
     return ebs_volume
 
@@ -94,11 +91,23 @@ def get_free_enis(internal_subnet):
             }
         ])
         free_enis = result['NetworkInterfaces']
+        log("free_enis: {}".format([eni["NetworkInterfaceId"] for eni in free_enis]))
 
     except ClientError as e:
         log("Error describing the instance {}: {}".format(internal_subnet, e.response['Error']))
 
+    if not free_enis or len(free_enis) == 0:
+        raise ResourceNotFound(
+            "ENI",
+            "No ENI for subnet ID '{}' has been found".format(internal_subnet)
+        )
+
     return free_enis
+
+
+def get_random_eni_id(enis):
+    eni_to_attach = random.choice(enis)
+    return eni_to_attach["NetworkInterfaceId"]
 
 
 def get_subnet_id(instance_id):
@@ -112,6 +121,12 @@ def get_subnet_id(instance_id):
 
     except ClientError as e:
         log("Error describing the instance {}: {}".format(instance_id, e.response['Error']))
+
+    if not vpc_subnet_id:
+        raise ResourceNotFound(
+            "subnet",
+            "No subnet for instance ID '{}' has been found".format(instance_id)
+        )
 
     return vpc_subnet_id
 
@@ -134,6 +149,9 @@ def attach_eni(eni_id, instance_id):
         except ClientError as e:
             log("Error attaching network interface: {}".format(e.response['Error']))
 
+    if not attachment:
+        raise ResourceAttachError("ENI")
+
     return attachment
 
 
@@ -153,6 +171,9 @@ def attach_ebs(ebs_id, instance_id):
             attachment_state = attachment['State']
         except ClientError as e:
             log("Error attaching network interface: {}".format(e.response['Error']))
+
+    if not attachment_state:
+        raise ResourceAttachError("EBS")
 
     return attachment_state
 
@@ -187,3 +208,19 @@ def complete_lifecycle_action_failure(hook_name, group_name, instance_id):
 
 def log(error):
     print('{}Z {}'.format(datetime.utcnow().isoformat(), error))
+
+
+class ResourceNotFound(Exception):
+    """Raised when resource is not found"""
+    def __init__(self, resource_type, message):
+        self.resource_type = resource_type
+        self.message = message
+        super().__init__(self.message)
+
+
+class ResourceAttachError(Exception):
+    """Raised when resource attachment fails"""
+    def __init__(self, resource_type):
+        self.resource_type = resource_type
+        self.message = "Resource {} has not been attached successfully".format(resource_type)
+        super().__init__(self.message)
