@@ -16,11 +16,12 @@ TAG_INVENTORY_NAME = os.environ['TAG_INVENTORY_NAME']
 
 STATIC_VOLUME = '/dev/xvdz'
 
-def handle(event, context):
+
+def handle(event, context):  # noqa
     if event["detail-type"] == "EC2 Instance-launch Lifecycle Action":
         instance_id = event['detail']['EC2InstanceId']
-        LifecycleHookName = event['detail']['LifecycleHookName']
-        AutoScalingGroupName = event['detail']['AutoScalingGroupName']
+        lifecycle_hook_name = event['detail']['LifecycleHookName']
+        auto_scaling_group_name = event['detail']['AutoScalingGroupName']
 
         subnet_id = get_subnet_id(instance_id)
         log("subnet_id: {} ".format(subnet_id))
@@ -29,13 +30,13 @@ def handle(event, context):
         free_enis = get_free_enis(subnet_id)
         if len(free_enis) == 0:
             log("No free ENIs found")
-            complete_lifecycle_action_failure(LifecycleHookName, AutoScalingGroupName, instance_id)
+            complete_lifecycle_action_failure(lifecycle_hook_name, auto_scaling_group_name, instance_id)
         log("free_enis: {} ".format([eni["NetworkInterfaceId"] for eni in free_enis]))
         eni_to_attach = random.choice(free_enis)
         eni_id = eni_to_attach["NetworkInterfaceId"]
         eni_attachment = attach_eni(eni_id, instance_id)
         if not eni_attachment:
-            complete_lifecycle_action_failure(LifecycleHookName, AutoScalingGroupName, instance_id)
+            complete_lifecycle_action_failure(lifecycle_hook_name, auto_scaling_group_name, instance_id)
 
         # ebs
         ebs_volume = get_ebs_volume(eni_id)
@@ -44,8 +45,8 @@ def handle(event, context):
         log("Free EBS volume: {}".format(ebs_volume["VolumeId"]))
         ebs_attachment = attach_ebs(ebs_volume["VolumeId"], instance_id)
         if not ebs_attachment:
-            complete_lifecycle_action_failure(LifecycleHookName, AutoScalingGroupName, instance_id)
-        complete_lifecycle_action_success(LifecycleHookName, AutoScalingGroupName, instance_id)
+            complete_lifecycle_action_failure(lifecycle_hook_name, auto_scaling_group_name, instance_id)
+        complete_lifecycle_action_success(lifecycle_hook_name, auto_scaling_group_name, instance_id)
 
 
 def get_ebs_volume(eni_id):
@@ -54,7 +55,7 @@ def get_ebs_volume(eni_id):
     """
     ebs_volume = None
     try:
-        result = ec2_client.describe_volumes( Filters=[
+        result = ec2_client.describe_volumes(Filters=[
             {
                 "Name": "tag:{}".format(TAG_INVENTORY_NAME),
                 "Values": [eni_id]
@@ -71,13 +72,14 @@ def get_ebs_volume(eni_id):
 
     return ebs_volume
 
+
 def get_free_enis(internal_subnet):
     """
     Get all free NetworkInterfaces in the internal subnet with the tag.
     """
     free_enis = None
     try:
-        result = ec2_client.describe_network_interfaces( Filters=[
+        result = ec2_client.describe_network_interfaces(Filters=[
             {
                 "Name": "tag:{}".format(TAG_STACK_NAME),
                 "Values": [TAG_STACK_VALUE]
@@ -98,6 +100,7 @@ def get_free_enis(internal_subnet):
 
     return free_enis
 
+
 def get_subnet_id(instance_id):
     """
     Get id of subnet where the instance is running.
@@ -112,13 +115,14 @@ def get_subnet_id(instance_id):
 
     return vpc_subnet_id
 
+
 def attach_eni(eni_id, instance_id):
     """
     Attach eni to instance.
     """
     attachment = None
 
-    log("Attaching '{}' eni to '{}' instance".format(eni_id,instance_id))
+    log("Attaching '{}' eni to '{}' instance".format(eni_id, instance_id))
     if eni_id and instance_id:
         try:
             attach_interface = ec2_client.attach_network_interface(
@@ -132,30 +136,32 @@ def attach_eni(eni_id, instance_id):
 
     return attachment
 
+
 def attach_ebs(ebs_id, instance_id):
     """
     Attach eni to instance.
     """
     attachment_state = None
-    log("Attaching '{}' ebs to '{}' instance".format(ebs_id,instance_id))
+    log("Attaching '{}' ebs to '{}' instance".format(ebs_id, instance_id))
     if ebs_id and instance_id:
         try:
-            attach_ebs = ec2_client.attach_volume(
+            attachment = ec2_client.attach_volume(
                 VolumeId=ebs_id,
                 InstanceId=instance_id,
                 Device=STATIC_VOLUME
             )
-            attachment_state = attach_ebs['State']
+            attachment_state = attachment['State']
         except ClientError as e:
             log("Error attaching network interface: {}".format(e.response['Error']))
 
     return attachment_state
 
-def complete_lifecycle_action_success(hookname, groupname, instance_id):
+
+def complete_lifecycle_action_success(hook_name, group_name, instance_id):
     try:
         asg_client.complete_lifecycle_action(
-            LifecycleHookName=hookname,
-            AutoScalingGroupName=groupname,
+            LifecycleHookName=hook_name,
+            AutoScalingGroupName=group_name,
             InstanceId=instance_id,
             LifecycleActionResult='CONTINUE'
         )
@@ -165,11 +171,11 @@ def complete_lifecycle_action_success(hookname, groupname, instance_id):
         log('{"Error": "1"}')
 
 
-def complete_lifecycle_action_failure(hookname, groupname, instance_id):
+def complete_lifecycle_action_failure(hook_name, group_name, instance_id):
     try:
         asg_client.complete_lifecycle_action(
-            LifecycleHookName=hookname,
-            AutoScalingGroupName=groupname,
+            LifecycleHookName=hook_name,
+            AutoScalingGroupName=group_name,
             InstanceId=instance_id,
             LifecycleActionResult='ABANDON'
         )
