@@ -168,7 +168,7 @@ def attach_ebs(ebs_id, instance_id):
             )
             attachment_state = attachment['State']
         except ClientError as e:
-            log("Error attaching network interface: {}".format(e.response['Error']))
+            log("Error attaching EBS volume: {}".format(e.response['Error']))
 
     if not attachment_state:
         raise ResourceAttachError("EBS")
