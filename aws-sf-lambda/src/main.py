@@ -27,10 +27,10 @@ def handle(event, context):  # noqa
             subnet_id = get_subnet_id(instance_id)
             free_enis = get_free_enis(subnet_id)
             eni_id = get_random_eni_id(free_enis)
-            ebs_volume = get_ebs_volume(eni_id)
+            ebs_volume_id = get_ebs_volume_id(eni_id)
 
             attach_eni(eni_id, instance_id)
-            attach_ebs(ebs_volume["VolumeId"], instance_id)
+            attach_ebs(ebs_volume_id, instance_id)
 
             complete_lifecycle_action_success(lifecycle_hook_name, auto_scaling_group_name, instance_id)
 
@@ -39,11 +39,11 @@ def handle(event, context):  # noqa
             complete_lifecycle_action_failure(lifecycle_hook_name, auto_scaling_group_name, instance_id)
 
 
-def get_ebs_volume(eni_id):
+def get_ebs_volume_id(eni_id):
     """
     Get the ebs volumes that is bound to the right ENI.
     """
-    ebs_volume = None
+    ebs_volume_id = None
     try:
         result = ec2_client.describe_volumes(Filters=[
             {
@@ -55,19 +55,19 @@ def get_ebs_volume(eni_id):
                 "Values": ["available"]
             }
         ])
-        ebs_volume = result['Volumes'][0]
-        log("Free EBS volume: {}".format(ebs_volume["VolumeId"]))
+        ebs_volume_id = result['Volumes'][0]["VolumeId"]
+        log("Free EBS volume ID: {}".format(ebs_volume_id))
 
     except ClientError as e:
         log("Error describing the instance {}: {}".format(eni_id, e.response['Error']))
 
-    if not ebs_volume or len(ebs_volume) == 0:
+    if not ebs_volume_id or len(ebs_volume_id) == 0:
         raise ResourceNotFound(
             "EBS",
             "No EBS for ENI ID '{}' has been found".format(eni_id)
         )
 
-    return ebs_volume
+    return ebs_volume_id
 
 
 def get_free_enis(internal_subnet):
