@@ -33,7 +33,7 @@ def handle(event, context):  # noqa
             complete_lifecycle_action_success(event)
 
         except (ResourceNotFound, ResourceAttachError) as e:
-            log(e.message)
+            log("{}: {}".format(e.description, e.message))
             complete_lifecycle_action_failure(event)
 
 
@@ -223,6 +223,8 @@ def log(error):
 
 class ResourceNotFound(Exception):
     """Raised when resource is not found"""
+    description = "Resource not found error"
+
     def __init__(self, resource_type, message):
         self.resource_type = resource_type
         self.message = message
@@ -231,6 +233,8 @@ class ResourceNotFound(Exception):
 
 class ResourceAttachError(Exception):
     """Raised when resource attachment fails"""
+    description = "Resource attachment error"
+
     def __init__(self, resource_type):
         self.resource_type = resource_type
         self.message = "Resource {} has not been attached successfully".format(resource_type)
