@@ -67,7 +67,7 @@ def get_ebs_volume(eni_id):
         ebs_volume = result['Volumes'][0]
 
     except botocore.exceptions.ClientError as e:
-        log("Error describing the instance {}: {}".format(internal_subnet, e.response['Error']))
+        log("Error describing the instance {}: {}".format(eni_id, e.response['Error']))
 
     return ebs_volume
 
