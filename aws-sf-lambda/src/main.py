@@ -19,9 +19,7 @@ STATIC_VOLUME = '/dev/xvdz'
 
 def handle(event, context):  # noqa
     if event["detail-type"] == "EC2 Instance-launch Lifecycle Action":
-        instance_id = event['detail']['EC2InstanceId']
-        lifecycle_hook_name = event['detail']['LifecycleHookName']
-        auto_scaling_group_name = event['detail']['AutoScalingGroupName']
+        instance_id = get_instance_id(event)
 
         try:
             subnet_id = get_subnet_id(instance_id)
@@ -32,11 +30,11 @@ def handle(event, context):  # noqa
             attach_eni(eni_id, instance_id)
             attach_ebs(ebs_volume_id, instance_id)
 
-            complete_lifecycle_action_success(lifecycle_hook_name, auto_scaling_group_name, instance_id)
+            complete_lifecycle_action_success(event)
 
         except (ResourceNotFound, ResourceAttachError) as e:
             log(e.message)
-            complete_lifecycle_action_failure(lifecycle_hook_name, auto_scaling_group_name, instance_id)
+            complete_lifecycle_action_failure(event)
 
 
 def get_ebs_volume_id(eni_id):
@@ -178,32 +176,45 @@ def attach_ebs(ebs_id, instance_id):
     return attachment_state
 
 
-def complete_lifecycle_action_success(hook_name, group_name, instance_id):
+def complete_lifecycle_action_success(event):
+    return complete_lifecycle_action(event, lifecycle_action_result='CONTINUE')
+
+
+def complete_lifecycle_action_failure(event):
+    return complete_lifecycle_action(event, lifecycle_action_result='ABANDON')
+
+
+def complete_lifecycle_action(event, lifecycle_action_result):
+    assert lifecycle_action_result in ['CONTINUE', 'ABANDON']
     try:
         asg_client.complete_lifecycle_action(
-            LifecycleHookName=hook_name,
-            AutoScalingGroupName=group_name,
-            InstanceId=instance_id,
-            LifecycleActionResult='CONTINUE'
+            LifecycleHookName=get_lifecycle_hook_name(event),
+            AutoScalingGroupName=get_auto_scaling_group_name(event),
+            InstanceId=get_instance_id(event),
+            LifecycleActionResult=lifecycle_action_result,
         )
-        log("Lifecycle hook CONTINUEd for: {}".format(instance_id))
+        log("Lifecycle hook {}ed for: {}".format(
+            lifecycle_action_result,
+            get_instance_id(event)
+        ))
     except ClientError as e:
-        log("Error completing life cycle hook for instance {}: {}".format(instance_id, e.response['Error']))
+        log("Error completing life cycle hook for instance {}: {}".format(
+            get_instance_id(event),
+            e.response['Error']
+        ))
         log('{"Error": "1"}')
 
 
-def complete_lifecycle_action_failure(hook_name, group_name, instance_id):
-    try:
-        asg_client.complete_lifecycle_action(
-            LifecycleHookName=hook_name,
-            AutoScalingGroupName=group_name,
-            InstanceId=instance_id,
-            LifecycleActionResult='ABANDON'
-        )
-        log("Lifecycle hook ABANDONed for: {}".format(instance_id))
-    except ClientError as e:
-        log("Error completing life cycle hook for instance {}: {}".format(instance_id, e.response['Error']))
-        log('{"Error": "1"}')
+def get_instance_id(event):
+    return event['detail']['EC2InstanceId']
+
+
+def get_lifecycle_hook_name(event):
+    return event['detail']['LifecycleHookName']
+
+
+def get_auto_scaling_group_name(event):
+    return event['detail']['AutoScalingGroupName']
 
 
 def log(error):
