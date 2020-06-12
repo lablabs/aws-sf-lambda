@@ -19,9 +19,9 @@ STATIC_VOLUME = '/dev/xvdz'
 
 def handle(event, context):  # noqa
     if event["detail-type"] == "EC2 Instance-launch Lifecycle Action":
-        instance_id = get_instance_id(event)
-
         try:
+            instance_id = get_instance_id(event)
+
             subnet_id = get_subnet_id(instance_id)
             free_enis = get_free_enis(subnet_id)
             eni_id = get_random_eni_id(free_enis)
@@ -32,7 +32,7 @@ def handle(event, context):  # noqa
 
             complete_lifecycle_action_success(event)
 
-        except (ResourceNotFound, ResourceAttachError) as e:
+        except (EventDataError, ResourceNotFound, ResourceAttachError) as e:
             log("{}: {}".format(e.description, e.message))
             complete_lifecycle_action_failure(event)
 
@@ -206,7 +206,13 @@ def complete_lifecycle_action(event, lifecycle_action_result):
 
 
 def get_instance_id(event):
-    return event['detail']['EC2InstanceId']
+    try:
+        instance_id = event['detail']['EC2InstanceId']
+        log("event['detail']['EC2InstanceId]' = {}".format(instance_id))
+        return instance_id
+    except KeyError:
+        log("Key error: event={}".format(event))
+        raise EventDataError("Cannot read EC2 instance ID form event detail")
 
 
 def get_lifecycle_hook_name(event):
@@ -219,6 +225,14 @@ def get_auto_scaling_group_name(event):
 
 def log(error):
     print('{}Z {}'.format(datetime.utcnow().isoformat(), error))
+
+
+class EventDataError(Exception):
+    """Raised when event data are not formatted as expected"""
+    description = "Event data error"
+
+    def __init__(self, message):
+        self.message = message
 
 
 class ResourceNotFound(Exception):
